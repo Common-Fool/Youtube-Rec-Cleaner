@@ -8,6 +8,22 @@ A userscript that cleans up YouTube recommendations:
 
 Every action goes through YouTube's own menu, so YouTube gets exactly the same signal as from a manual click.
 
+## Screenshots
+
+**Home feed:** "Not interested" on the thumbnail (appears on hover, next to Watch later / Add to queue)
+
+<img src="docs/feed.png" width="640" alt="Not interested button on a video thumbnail">
+
+**Home feed:** "Don't recommend channel" next to the channel name
+
+<img src="docs/feed-channel.png" width="640" alt="Don't recommend channel button next to the channel name">
+
+**Shorts:** ⊘ "Not interested" and ✕ "Don't recommend channel" below the navigation arrows
+
+<img src="docs/shorts.png" width="480" alt="Shorts buttons below the navigation arrows">
+
+<sub>The buttons are rendered by the script itself; the surrounding page is a simplified mock-up of YouTube.</sub>
+
 ## Install
 
 1. Install a userscript manager: [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/).
