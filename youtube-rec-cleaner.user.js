@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Rec Cleaner
 // @namespace    https://github.com/Common-Fool/Youtube-Rec-Cleaner
-// @version      2.0.1
+// @version      2.0.2
 // @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
 // @homepageURL  https://github.com/Common-Fool/Youtube-Rec-Cleaner
@@ -17,7 +17,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '2.0.1';
+    const VERSION = '2.0.2';
 
     /* ──────────────────────────── SETTINGS ──────────────────────────── */
     /*
@@ -426,15 +426,17 @@ ${supportsHas ? `
     }
 
     let busy = false;
+    const MISS = {};
 
     /**
      * Opens ⋮ and clicks the wanted item. triggers is one button or a list of candidates:
      * if the first candidate's menu lacks the item, the next one is tried.
+     * Returns the trigger that worked, or null.
      */
     async function runNativeAction(triggers, matcher) {
         const list = (Array.isArray(triggers) ? triggers : [triggers]).filter(Boolean);
-        if (!list.length) { log('no ⋮ button for this action'); return false; }
-        if (busy) return false;
+        if (!list.length) { log('no ⋮ button for this action'); return null; }
+        if (busy) return null;
         busy = true;
         const html = document.documentElement;
         html.classList.add('ytrc-busy');
@@ -446,22 +448,31 @@ ${supportsHas ? `
                 await sleep(0);
                 trigger.click();
 
-                const item = await waitFor(() => findItem(matcher), list.length > 1 ? 1500 : 2500, 40);
-                if (!item) { log('item not found in this menu', trigger); continue; }
+                // with several candidates, a menu that has rendered its items but lacks
+                // the wanted one is abandoned quickly instead of waiting out the timeout
+                let itemsSince = 0;
+                const item = await waitFor(() => {
+                    const it = findItem(matcher);
+                    if (it || list.length < 2) return it;
+                    if (!openPopups().some((d) => menuItems(d).length)) return null;
+                    itemsSince = itemsSince || Date.now();
+                    return Date.now() - itemsSince > 300 ? MISS : null;
+                }, list.length > 1 ? 1500 : 2500, 40);
+                if (!item || item === MISS) { log('item not found in this menu', trigger); continue; }
 
                 const pop = item.closest(POPUP_SEL);
                 clickItem(item);
 
                 await sleep(150);
                 if (pop && pop.getAttribute('aria-hidden') !== 'true' && isVisible(pop)) closePopup(pop);
-                return true;
+                return trigger;
             }
             log('item not found in any candidate menu', list);
             closeAllPopups();
-            return false;
+            return null;
         } catch (e) {
             err('runNativeAction', e);
-            return false;
+            return null;
         } finally {
             clearTimeout(safety);
             setTimeout(() => { html.classList.remove('ytrc-busy'); busy = false; }, 200);
@@ -685,19 +696,63 @@ ${supportsHas ? `
         return out.filter(isVisible).concat(out.filter((b) => !isVisible(b)));
     }
 
-    async function shortsAction(matcher) {
+    /* Remembered per action between page loads:
+       trigger — which ⋮ worked last time, so it is tried first;
+       advances — whether YouTube scrolls to the next Short by itself after this action.
+       Without the latter every action would wait autoNextWait before scrolling. */
+    const STATE_KEY = 'ytrc:state';
+    const STATE_TTL = 24 * 3600 * 1000; // re-check YouTube's behaviour once a day
+
+    function loadState() {
+        try { return JSON.parse(localStorage.getItem(STATE_KEY) || '{}') || {}; } catch (e) { return {}; }
+    }
+
+    function saveState(kind, patch) {
+        try {
+            const st = loadState();
+            st[kind] = { ...st[kind], ...patch };
+            localStorage.setItem(STATE_KEY, JSON.stringify(st));
+        } catch (e) { /* noop */ }
+    }
+
+    // DOM path alone is ambiguous (several ⋮ can share it), so add its index among namesakes
+    function triggerKey(btn, all) {
+        const d = describe(btn);
+        return d + '|' + all.filter((b) => describe(b) === d).indexOf(btn);
+    }
+
+    async function shortsAction(kind, matcher) {
         if (busy) return;
         const before = location.pathname;
-        const triggers = shortsMenuTriggers();
+        const known = loadState()[kind] || {};
+
+        const found = shortsMenuTriggers();
+        const triggers = found.slice();
+        const pref = found.findIndex((b) => triggerKey(b, found) === known.trigger);
+        if (pref > 0) triggers.unshift(...triggers.splice(pref, 1));
         log('shorts: ⋮ candidates', triggers);
-        const ok = await runNativeAction(triggers, matcher);
-        if (!ok) { err('shorts: action failed. Run __ytrc.diag() in the console for details'); return; }
+
+        const used = await runNativeAction(triggers, matcher);
+        if (!used) { err('shorts: action failed. Run __ytrc.diag() in the console for details'); return; }
+        saveState(kind, { trigger: triggerKey(used, found) });
         if (!CFG.shorts.autoNext) return;
+
+        const next = () => {
+            const btn = document.querySelector('ytd-shorts #navigation-button-down button');
+            if (btn) btn.click();
+        };
+        const fresh = known.checkedAt && Date.now() - known.checkedAt < STATE_TTL;
+        if (fresh && known.advances === false) {
+            // YouTube doesn't scroll after this action: do it right away
+            await sleep(150);
+            if (location.pathname === before) next();
+            return;
+        }
         // YouTube often moves to the next Short by itself; otherwise we'd skip two
         const moved = await waitFor(() => location.pathname !== before, CFG.shorts.autoNextWait, 60);
+        saveState(kind, { advances: !!moved, checkedAt: Date.now() });
         if (moved) { log('YouTube scrolled to the next Short itself'); return; }
-        const next = document.querySelector('ytd-shorts #navigation-button-down button');
-        if (next) next.click();
+        next();
     }
 
     function makeShortsButton(sample, kind, tip, icon, matcher) {
@@ -705,7 +760,7 @@ ${supportsHas ? `
         wrap.className = 'navigation-button style-scope ytd-shorts ytrc-shorts-wrap';
         wrap.dataset.ytrc = kind;
         const btn = cloneYtButton(sample, tip, icon);
-        btn.addEventListener('click', (e) => { killEvent(e); shortsAction(matcher); }, true);
+        btn.addEventListener('click', (e) => { killEvent(e); shortsAction(kind, matcher); }, true);
         bindTip(btn, tip, 'left');
         wrap.appendChild(btn);
         return wrap;
