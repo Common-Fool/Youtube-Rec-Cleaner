@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Rec Cleaner
 // @namespace    https://github.com/Common-Fool/Youtube-Rec-Cleaner
-// @version      2.0.3
+// @version      2.0.4
 // @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
 // @homepageURL  https://github.com/Common-Fool/Youtube-Rec-Cleaner
@@ -17,7 +17,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '2.0.3';
+    const VERSION = '2.0.4';
 
     /* ──────────────────────────── SETTINGS ──────────────────────────── */
     /*
@@ -429,7 +429,6 @@ ${supportsHas ? `
     }
 
     let busy = false;
-    const MISS = {};
 
     /**
      * Opens ⋮ and clicks the wanted item. triggers is one button or a list of candidates:
@@ -452,17 +451,9 @@ ${supportsHas ? `
                 tlog('click ⋮', trigger.getAttribute('aria-label'), trigger);
                 trigger.click();
 
-                // with several candidates, a menu that has rendered its items but lacks
-                // the wanted one is abandoned quickly instead of waiting out the timeout
-                let itemsSince = 0;
-                const item = await waitFor(() => {
-                    const it = findItem(matcher);
-                    if (it || list.length < 2) return it;
-                    if (!openPopups().some((d) => menuItems(d).length)) return null;
-                    itemsSince = itemsSince || Date.now();
-                    return Date.now() - itemsSince > 300 ? MISS : null;
-                }, list.length > 1 ? 1500 : 2500, 40);
-                if (!item || item === MISS) { tlog(item ? 'menu lacks the item, next ⋮' : 'menu timeout, next ⋮', openPopups()); continue; }
+                // no early give-up: YouTube may add feedback items to an already open menu later
+                const item = await waitFor(() => findItem(matcher), 2500, 40);
+                if (!item) { tlog('item not found in this menu, next ⋮', openPopups()); continue; }
 
                 const pop = item.closest(POPUP_SEL);
                 tlog('item found:', norm(item), item);
@@ -686,19 +677,29 @@ ${supportsHas ? `
             const r = el.getBoundingClientRect();
             return r.width > 0 && rectsOverlap(r, reelRect);
         };
-        const ok = (b) => b && !b.closest('.ytrc-shorts-wrap, .navigation-container, #navigation-button-up, #navigation-button-down');
+        // the player's own controls (share, cards, playlist…) are never the feedback menu,
+        // and clicking them can leave the player stuck
+        const ok = (b) => b && !b.matches('.ytp-button, [class*="ytp-"]') && !b.closest('.html5-video-player')
+            && !b.closest('.ytrc-shorts-wrap, .navigation-container, #navigation-button-up, #navigation-button-down');
 
-        const out = [];
-        const add = (b) => { if (ok(b) && inActive(b) && !out.includes(b)) out.push(b); };
-
-        for (const sel of TRIGGER_SEL) shorts.querySelectorAll(sel).forEach(add);
+        const all = [];
+        const push = (b) => { if (ok(b) && !all.includes(b)) all.push(b); };
+        for (const sel of TRIGGER_SEL) shorts.querySelectorAll(sel).forEach(push);
         shorts.querySelectorAll('button[aria-label], [role="button"][aria-label]').forEach((b) => {
-            if (RE_MORE_LABEL.test((b.getAttribute('aria-label') || '').trim())) add(b);
+            if (RE_MORE_LABEL.test((b.getAttribute('aria-label') || '').trim())) push(b);
         });
-        shorts.querySelectorAll('button[aria-haspopup="true"], button[aria-haspopup="menu"]').forEach(add);
 
-        // visible ones first, but keep hidden ones: the player's ⋮ may only show on hover
-        return out.filter(isVisible).concat(out.filter((b) => !isVisible(b)));
+        // visible ones first, but keep hidden ones: the ⋮ may only show on hover
+        let out = all.filter(inActive);
+        out = out.filter(isVisible).concat(out.filter((b) => !isVisible(b)));
+
+        // active Short not recognised: take the visible ⋮ nearest to the screen centre
+        if (!out.length) {
+            const cx = innerWidth / 2, cy = innerHeight / 2;
+            const dist = (b) => { const r = b.getBoundingClientRect(); return Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy); };
+            out = all.filter(isVisible).sort((a, b) => dist(a) - dist(b));
+        }
+        return out.slice(0, 3);
     }
 
     /* Remembered per action between page loads:
