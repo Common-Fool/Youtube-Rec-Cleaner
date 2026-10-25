@@ -1,46 +1,45 @@
 # YouTube Rec Cleaner
 
-Юзерскрипт для чистки рекомендаций YouTube:
+A userscript that cleans up YouTube recommendations:
 
-- **Скрывает миксы и радио** (Mix / Мікс / Микс) на главной, в поиске и в сайдбаре. Работает через CSS, без мигания.
-- **Лента рекомендаций:** крестик на превью («Не интересует») и крестик рядом с именем канала («Не рекомендовать канал»).
-- **Shorts:** две кнопки под стрелками навигации: ⊘ «Не интересует» и ✕ «Не рекомендовать канал». После действия скрипт листает к следующему ролику, если YouTube не сделал этого сам.
+- **Hides Mixes and Radio** on the home page, in search and in the watch-page sidebar. Pure CSS, no flashing.
+- **Home feed:** an X on the thumbnail ("Not interested") and an X next to the channel name ("Don't recommend channel").
+- **Shorts:** two buttons below the navigation arrows: ⊘ "Not interested" and ✕ "Don't recommend channel". After the action the script scrolls to the next Short if YouTube didn't do it itself.
 
-Все действия выполняются через штатное меню YouTube, то есть YouTube получает такой же сигнал, как при ручном клике.
+Every action goes through YouTube's own menu, so YouTube gets exactly the same signal as from a manual click.
 
-## Установка
+## Install
 
-1. Поставьте менеджер юзерскриптов: [Tampermonkey](https://www.tampermonkey.net/) или [Violentmonkey](https://violentmonkey.github.io/).
-2. Откройте ссылку, и менеджер предложит установить скрипт:
+1. Install a userscript manager: [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/).
+2. Open this link and the manager will offer to install the script:
    **https://raw.githubusercontent.com/Common-Fool/Youtube-Rec-Cleaner/main/youtube-rec-cleaner.user.js**
-3. Если раньше стояли отдельные скрипты «скрыть миксы» и «кнопки Не интересует», отключите их, иначе кнопки задублируются.
 
-Обновления приходят автоматически: менеджер сверяет `@version` с файлом в ветке `main`.
+Updates are automatic: the manager compares `@version` against the file on the `main` branch.
 
-## Настройки
+## Settings
 
-Правки в самом файле затрутся при автообновлении, поэтому свои настройки задаются через `localStorage` на youtube.com (консоль F12):
+Edits made inside the script file are lost on auto-update, so custom settings live in youtube.com's `localStorage` (F12 console):
 
 ```js
-// пример: не листать шортс автоматически и показывать крестики во всей ленте, не только на главной
+// example: don't auto-scroll Shorts, and show the X buttons across the whole feed, not just the home page
 localStorage['ytrc:cfg'] = JSON.stringify({
     shorts: { autoNext: false },
     feed: { onlyHomePage: false },
 });
-// сброс
+// reset
 localStorage.removeItem('ytrc:cfg');
 ```
 
-Все доступные ключи с комментариями перечислены в блоке `DEFAULTS` в начале скрипта. Указанные ключи накладываются поверх значений по умолчанию, после правки нужно перезагрузить страницу.
+All available keys are listed with comments in the `DEFAULTS` block at the top of the script. The given keys are merged over the defaults; reload the page after changing them.
 
-## Если что-то сломалось
+## Troubleshooting
 
-YouTube часто меняет вёрстку. Если кнопка в Shorts перестала срабатывать, откройте шортс, выполните в консоли
+YouTube changes its markup often. If a Shorts button stops working, open a Short, run this in the console
 
 ```js
 __ytrc.diag(true)
 ```
 
-и приложите вывод к [issue](https://github.com/Common-Fool/Youtube-Rec-Cleaner/issues). Команда покажет, какие кнопки «⋮» нашёл скрипт и какие пункты есть в их меню.
+and attach the output to an [issue](https://github.com/Common-Fool/Youtube-Rec-Cleaner/issues). It shows which ⋮ buttons the script found and which items their menus contain.
 
-Подробный лог в консоли включается так: `localStorage['ytrc:cfg'] = JSON.stringify({ debug: true })`.
+Verbose logging: `localStorage['ytrc:cfg'] = JSON.stringify({ debug: true })`.

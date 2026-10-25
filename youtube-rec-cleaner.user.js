@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Rec Cleaner
 // @namespace    https://github.com/Common-Fool/Youtube-Rec-Cleaner
-// @version      2.0.0
-// @description  Чистка рекомендаций YouTube: скрывает миксы/радио и добавляет быстрые кнопки нативного фидбека — «Не интересует» и «Не рекомендовать канал» в ленте и в Shorts. Все действия выполняются через штатное меню YouTube.
+// @version      2.0.1
+// @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
 // @homepageURL  https://github.com/Common-Fool/Youtube-Rec-Cleaner
 // @supportURL   https://github.com/Common-Fool/Youtube-Rec-Cleaner/issues
@@ -17,47 +17,47 @@
 (() => {
     'use strict';
 
-    const VERSION = '2.0.0';
+    const VERSION = '2.0.1';
 
-    /* ─────────────────────────── НАСТРОЙКИ ─────────────────────────── */
+    /* ──────────────────────────── SETTINGS ──────────────────────────── */
     /*
-       Скрипт автообновляется, поэтому правки прямо в этом блоке затрутся при обновлении.
-       Свои настройки кладите в localStorage youtube.com (консоль F12 на странице YouTube):
+       The script auto-updates, so edits made directly in this block are lost on update.
+       Put your own settings into youtube.com's localStorage (F12 console on a YouTube page):
 
            localStorage['ytrc:cfg'] = JSON.stringify({ shorts: { autoNext: false } })
 
-       Указанные ключи накладываются поверх значений ниже. Сброс: localStorage.removeItem('ytrc:cfg')
+       The given keys are merged over the defaults below. Reset: localStorage.removeItem('ytrc:cfg')
     */
     const DEFAULTS = {
         mixes: {
             enabled: true,
-            // Где резать
+            // Where to hide them
             where: {
-                feed: true,        // главная и подписки (плитки ytd-rich-item-renderer)
-                search: true,      // выдача поиска
-                sidebar: true,     // рекомендации справа на странице просмотра
-                legacy: true,      // старые отдельные элементы миксов (ytd-radio-renderer и т.п.)
+                feed: true,        // home and subscriptions (ytd-rich-item-renderer tiles)
+                search: true,      // search results
+                sidebar: true,     // related videos on the watch page
+                legacy: true,      // legacy standalone mix elements (ytd-radio-renderer etc.)
             },
-            // Дополнительно резать по тексту бейджа «Мікс/Микс/Mix».
-            // По умолчанию выключено: CSS-признаки точнее и не зависят от языка интерфейса.
+            // Also match by the "Mix" badge text (localized).
+            // Off by default: the CSS markers are more precise and language-independent.
             alsoMatchBadgeText: false,
         },
 
         feed: {
-            notInterested: true,       // крестик на превью
-            channel: true,             // крестик рядом с именем канала
-            // true — только главная (/), false — везде, где есть карточки-локапы
+            notInterested: true,       // X button on the thumbnail
+            channel: true,             // X button next to the channel name
+            // true: home page (/) only; false: everywhere lockup cards appear
             onlyHomePage: true,
-            // Крестик канала: 'row' — в строку с именем канала, 'menu' — слева от «⋮» (гарантированно видно)
+            // Channel X placement: 'row' next to the channel name, 'menu' left of the ⋮ button (always visible)
             channelBtnPlace: 'row',
-            // Крестик канала виден всегда (false) или только при наведении на карточку (true)
+            // Channel X always visible (false) or only while hovering the card (true)
             channelBtnOnlyOnHover: false,
         },
 
         shorts: {
-            notInterested: true,       // кнопка «Не интересует» под стрелками
-            channel: true,             // кнопка «Не рекомендовать канал» под стрелками
-            // Пролистнуть дальше, ЕСЛИ YouTube не сделал этого сам
+            notInterested: true,       // "Not interested" button below the arrows
+            channel: true,             // "Don't recommend channel" button below the arrows
+            // Scroll to the next Short IF YouTube didn't do it itself
             autoNext: true,
             autoNextWait: 1200,
         },
@@ -68,7 +68,7 @@
             notRecommend: "Don't recommend channel",
         },
 
-        // true — подробный лог в консоль. Ошибки логируются всегда, независимо от флага.
+        // true: verbose console log. Errors are always logged regardless of this flag.
         debug: false,
     };
 
@@ -84,29 +84,29 @@
 
     const CFG = (() => {
         try { return deepMerge(DEFAULTS, JSON.parse(localStorage.getItem('ytrc:cfg') || 'null')); }
-        catch (e) { console.error('[ytrc] битый localStorage ytrc:cfg, беру настройки по умолчанию', e); return DEFAULTS; }
+        catch (e) { console.error('[ytrc] invalid localStorage ytrc:cfg, using defaults', e); return DEFAULTS; }
     })();
 
     const log = (...a) => CFG.debug && console.log('[ytrc]', ...a);
     const err = (...a) => console.error('[ytrc]', ...a);
 
-    /** Изоляция: падение одного блока не должно убивать остальные */
+    /** Isolation: one failing block must not take down the others */
     function safe(name, fn) {
-        try { return fn(); } catch (e) { err('ошибка в', name, e); return null; }
+        try { return fn(); } catch (e) { err('error in', name, e); return null; }
     }
 
     const supportsHas = (() => {
         try { return CSS.supports('selector(:has(*))'); } catch (e) { return false; }
     })();
 
-    /* ══════════════════════════ МИКСЫ ══════════════════════════════════ */
+    /* ══════════════════════════ MIXES ══════════════════════════════════ */
     /*
-       1) У хоста локапа класс вида content-id-RD… — это id плейлиста-микса.
-          Обязательно в паре с ytLockupViewModelCollectionStack…, иначе можно
-          зацепить обычное видео, чей 11-символьный id случайно начинается с RD.
-       2) Ссылка содержит start_radio=1 — так помечены карточки запуска микса/радио.
-          Элементы очереди внутри уже запущенного микса этого параметра не имеют,
-          поэтому открытый микс не пострадает.
+       1) The lockup host has a class like content-id-RD… — that is the mix playlist id.
+          It must be paired with ytLockupViewModelCollectionStack…, otherwise a regular
+          video whose 11-char id happens to start with RD would match too.
+       2) The link contains start_radio=1 — that marks cards that start a mix/radio.
+          Queue items inside an already playing mix don't have it,
+          so a mix you opened yourself is left alone.
     */
     const MIX_HOST = '[class*="ytLockupViewModelCollectionStack"][class*="content-id-RD"]';
     const MIX_LINK = 'a[href*="start_radio=1"]';
@@ -142,12 +142,12 @@
         st.id = 'ytrc-mixes';
         st.textContent = rules.join(',\n') + ' { display: none !important; }';
         (document.head || document.documentElement).appendChild(st);
-        log('миксы: стили применены,', rules.length, 'правил');
+        log('mixes: CSS applied,', rules.length, 'rules');
     }
 
     const mixJsNeeded = () => CFG.mixes.enabled && (!supportsHas || CFG.mixes.alsoMatchBadgeText);
 
-    /* Резервный путь: браузер без :has() или включённый разбор по бейджу */
+    /* Fallback: browser without :has(), or badge-text matching enabled */
     function hideMixesJs() {
         let n = 0;
         const hide = (el) => {
@@ -167,26 +167,28 @@
             }
         }
         if (CFG.mixes.alsoMatchBadgeText) {
-            const re = /^(мікс|микс|mix)$/i;
+            const re = /^(мікс|микс|mix)$/i; // localized badge text
             document.querySelectorAll('.ytBadgeShapeText').forEach((b) => {
                 if (re.test((b.textContent || '').trim())) hide(container(b));
             });
         }
-        if (n) log('миксы: скрыто вручную:', n);
+        if (n) log('mixes: hidden via JS:', n);
     }
 
-    /* ══════════════════════════ КНОПКИ ФИДБЕКА ═════════════════════════ */
+    /* ═════════════════════════ FEEDBACK BUTTONS ════════════════════════ */
 
-    // Иконки пунктов меню YouTube — для языконезависимого поиска пункта
+    // YouTube menu item icons, for language-independent item lookup
     const ICON = {
         NOT_INTERESTED: 'M12 1C5.925 1 1 5.925 1 12s4.925 11 11 11 11-4.925 11-11S18.075 1 12 1Zm0 2a9 9 0 018.246 12.605L4.755 6.661A8.99 8.99 0 0112 3ZM3.754 8.393l15.491 8.944A9 9 0 013.754 8.393Z',
         REMOVE: 'M12 1C5.925 1 1 5.925 1 12s4.925 11 11 11 11-4.925 11-11S18.075 1 12 1Zm0 2a9 9 0 110 18.001A9 9 0 0112 3Zm4 8H8a1 1 0 000 2h8a1 1 0 000-2Z',
     };
 
     const X_PATH = 'M6.4 4.99 4.99 6.4 10.59 12l-5.6 5.6 1.41 1.41L12 13.41l5.6 5.6 1.41-1.41-5.6-5.6 5.6-5.6-1.41-1.41-5.6 5.6-5.6-5.6Z';
-    // «⊘» для «Не интересует» в шортсах, чтобы не путать с крестиком канала
+    // ⊘ for "Not interested" in Shorts, so it isn't confused with the channel X
     const BAN_PATH = ICON.NOT_INTERESTED;
 
+    // Menu item labels as YouTube renders them (English, Ukrainian, Russian UI).
+    // These match YouTube's own text, so they must stay in those languages.
     const RE_NOT_INTERESTED = /не\s*ці?к[аи]в|не\s*интерес|not\s*interested/i;
     const RE_NOT_RECOMMEND = /не\s*рекоменд|do\s*n[o']?t\s*recommend|don't\s*recommend/i;
 
@@ -195,7 +197,7 @@
         notRecommend: { text: RE_NOT_RECOMMEND, notText: RE_NOT_INTERESTED, icons: [ICON.REMOVE] },
     };
 
-    /* ───────────────────────────── УТИЛИТЫ ──────────────────────────── */
+    /* ───────────────────────────── UTILITIES ─────────────────────────── */
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -226,9 +228,9 @@
         e.stopImmediatePropagation();
     }
 
-    /* ──────────────────────────── СТИЛИ ─────────────────────────────── */
-    /* Вся правка вёрстки YouTube делается стилями, а не записью в его узлы:
-       inline-стили и data-атрибуты на элементах view-model провоцируют их ре-рендер. */
+    /* ───────────────────────────── STYLES ────────────────────────────── */
+    /* All layout tweaks to YouTube's markup are done via CSS rather than writing to its nodes:
+       inline styles and data attributes on view-model elements trigger re-renders. */
 
     function buildCSS() {
         return `
@@ -267,8 +269,8 @@ yt-lockup-view-model:hover .ytrc-x { opacity: .7; pointer-events: auto; }
 ` : ''}
 
 ${supportsHas ? `
-/* Строка метаданных у YouTube — -webkit-box с line-clamp: посторонний элемент
-   уезжает на скрытую вторую строку. Разжимаем ТОЛЬКО ту строку, где стоит крестик. */
+/* YouTube's metadata row is a -webkit-box with line-clamp: a foreign element
+   wraps onto the hidden second line. Unclamp ONLY the row that holds our X. */
 .ytContentMetadataViewModelMetadataRow:has(> .ytrc-x) {
     display: flex !important;
     align-items: center !important;
@@ -310,7 +312,7 @@ ${supportsHas ? `
         (document.head || document.documentElement).appendChild(st);
     }
 
-    /* ─────────────────────── ВСПЛЫВАЮЩАЯ ПОДСКАЗКА ──────────────────── */
+    /* ──────────────────────────── TOOLTIP ────────────────────────────── */
 
     let tipEl = null;
     let tipTimer = null;
@@ -353,11 +355,11 @@ ${supportsHas ? `
         el.addEventListener('click', tipHide);
     }
 
-    /* ──────────────── РАБОТА С НАТИВНЫМ МЕНЮ YOUTUBE ────────────────── */
+    /* ─────────────────── DRIVING YOUTUBE'S NATIVE MENU ──────────────── */
     /*
-       Меню бывает разных видов: классический tp-yt-iron-dropdown (лента),
-       yt-sheet-view-model (новые view-model меню) и попап плеера .ytp-popup
-       (новый ⋮ в шортсах, где рядом «Субтитры», «Швидкість відтворення» и т.п.).
+       Menus come in several kinds: the classic tp-yt-iron-dropdown (feed),
+       yt-sheet-view-model (newer view-model menus) and the player popup .ytp-popup
+       (the new ⋮ in Shorts, alongside Subtitles, Playback speed, etc.).
     */
     const POPUP_SEL = 'tp-yt-iron-dropdown, yt-sheet-view-model, .ytp-popup, [role="menu"]';
     const ITEM_SEL = [
@@ -378,7 +380,7 @@ ${supportsHas ? `
         try {
             if (d && typeof d.close === 'function') { d.close(); return; }
             if (d && d.matches('tp-yt-iron-dropdown')) { d.setAttribute('aria-hidden', 'true'); return; }
-            // попапы плеера и view-model меню закрываются по Escape
+            // player popups and view-model menus close on Escape
             const ev = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true, composed: true };
             (d || document).dispatchEvent(new KeyboardEvent('keydown', ev));
             (d || document).dispatchEvent(new KeyboardEvent('keyup', ev));
@@ -426,12 +428,12 @@ ${supportsHas ? `
     let busy = false;
 
     /**
-     * Открывает «⋮» и жмёт нужный пункт. triggers — одна кнопка или список кандидатов:
-     * если в меню первого кандидата пункта нет, пробуем следующий.
+     * Opens ⋮ and clicks the wanted item. triggers is one button or a list of candidates:
+     * if the first candidate's menu lacks the item, the next one is tried.
      */
     async function runNativeAction(triggers, matcher) {
         const list = (Array.isArray(triggers) ? triggers : [triggers]).filter(Boolean);
-        if (!list.length) { log('нет кнопки «⋮» для действия'); return false; }
+        if (!list.length) { log('no ⋮ button for this action'); return false; }
         if (busy) return false;
         busy = true;
         const html = document.documentElement;
@@ -445,7 +447,7 @@ ${supportsHas ? `
                 trigger.click();
 
                 const item = await waitFor(() => findItem(matcher), list.length > 1 ? 1500 : 2500, 40);
-                if (!item) { log('в меню кнопки нет нужного пункта', trigger); continue; }
+                if (!item) { log('item not found in this menu', trigger); continue; }
 
                 const pop = item.closest(POPUP_SEL);
                 clickItem(item);
@@ -454,7 +456,7 @@ ${supportsHas ? `
                 if (pop && pop.getAttribute('aria-hidden') !== 'true' && isVisible(pop)) closePopup(pop);
                 return true;
             }
-            log('пункт меню не найден ни у одного кандидата', list);
+            log('item not found in any candidate menu', list);
             closeAllPopups();
             return false;
         } catch (e) {
@@ -466,12 +468,12 @@ ${supportsHas ? `
         }
     }
 
-    /* ───────────────────────── СБОРКА КНОПОК ────────────────────────── */
+    /* ───────────────────────── BUILDING BUTTONS ──────────────────────── */
 
     /**
-     * Иконка в клонированной кнопке YouTube.
-     * Сначала подменяем d у уже отрисованного <svg>; если svg ещё нет
-     * (в шортсах стрелки стамплются раньше иконок) — собираем разметку сами.
+     * Icon inside a cloned YouTube button.
+     * First swap d on the already rendered <svg>; if there is no svg yet
+     * (in Shorts the arrows are stamped before their icons), build the markup ourselves.
      */
     function setIcon(btn, d, px = 24) {
         const path = btn.querySelector('svg path');
@@ -482,7 +484,7 @@ ${supportsHas ? `
             return;
         }
         const slot = btn.querySelector('.ytSpecButtonShapeNextIcon');
-        if (!slot) { log('нет слота под иконку', btn); return; }
+        if (!slot) { log('no icon slot', btn); return; }
         slot.textContent = '';
 
         const wrap = document.createElement('span');
@@ -539,7 +541,7 @@ ${supportsHas ? `
         return btn;
     }
 
-    /* ──────────────────── КНОПКИ В ЛЕНТЕ РЕКОМЕНДАЦИЙ ───────────────── */
+    /* ───────────────────────── FEED BUTTONS ──────────────────────────── */
 
     const feedEnabled = () => !CFG.feed.onlyHomePage || location.pathname === '/';
 
@@ -563,7 +565,7 @@ ${supportsHas ? `
             const btn = cloneYtButton(sample, CFG.tips.notInterested);
             wrap.appendChild(btn);
 
-            // кнопка лежит внутри <a href="/watch?v=…> — гасим переход на видео
+            // the button sits inside <a href="/watch?v=…">, so suppress navigation to the video
             ['pointerdown', 'mousedown', 'mouseup', 'auxclick', 'touchstart'].forEach((ev) =>
                 wrap.addEventListener(ev, killEvent, true));
             wrap.addEventListener('click', async (e) => {
@@ -576,7 +578,7 @@ ${supportsHas ? `
             cont.appendChild(wrap);
             n++;
         }
-        if (n) log('крестиков на превью добавлено:', n);
+        if (n) log('thumbnail X buttons added:', n);
     }
 
     function channelBtnAnchor(meta) {
@@ -613,7 +615,7 @@ ${supportsHas ? `
             else anchor.parent.appendChild(btn);
             n++;
         }
-        if (n || skipped) log('крестиков канала добавлено:', n, '| пропущено карточек:', skipped);
+        if (n || skipped) log('channel X buttons added:', n, '| cards skipped:', skipped);
     }
 
     /* ─────────────────────────── SHORTS ─────────────────────────────── */
@@ -632,7 +634,7 @@ ${supportsHas ? `
         return best ? best.r : null;
     }
 
-    // aria-label кнопки «⋮» на разных языках
+    // aria-label of the ⋮ button in different UI languages
     const RE_MORE_LABEL = /^(more( actions| options)?|action menu|інші дії|додаткові дії|більше( дій| параметрів)?|ще|другие действия|дополнительные действия|ещё|еще|больше( действий)?|меню|menu)$/i;
 
     const TRIGGER_SEL = [
@@ -648,9 +650,9 @@ ${supportsHas ? `
     const rectsOverlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
     /**
-     * Кандидаты на «⋮» активного шортса, от самых вероятных к менее вероятным.
-     * YouTube регулярно переносит это меню (раньше — в колонке действий справа,
-     * теперь ещё и в верхней панели плеера), поэтому ищем несколькими способами.
+     * ⋮ candidates for the active Short, most likely first.
+     * YouTube keeps moving this menu (it used to be in the right-hand action column,
+     * now it is also in the player's top bar), so several lookup strategies are used.
      */
     function shortsMenuTriggers() {
         const shorts = document.querySelector('ytd-shorts');
@@ -658,8 +660,8 @@ ${supportsHas ? `
         const reel = activeReel();
         const reelRect = reel && reel.getBoundingClientRect();
 
-        // элемент принадлежит активному ролику, если лежит внутри него
-        // или (для оверлеев, вынесенных из ролика) визуально его перекрывает
+        // an element belongs to the active Short if it is inside it
+        // or (for overlays rendered outside the reel) visually overlaps it
         const inActive = (el) => {
             if (!reel) return true;
             if (reel.contains(el)) return true;
@@ -679,7 +681,7 @@ ${supportsHas ? `
         });
         shorts.querySelectorAll('button[aria-haspopup="true"], button[aria-haspopup="menu"]').forEach(add);
 
-        // видимые — вперёд, но невидимые не выкидываем: ⋮ в плеере может показываться только при наведении
+        // visible ones first, but keep hidden ones: the player's ⋮ may only show on hover
         return out.filter(isVisible).concat(out.filter((b) => !isVisible(b)));
     }
 
@@ -687,13 +689,13 @@ ${supportsHas ? `
         if (busy) return;
         const before = location.pathname;
         const triggers = shortsMenuTriggers();
-        log('шортсы: кандидаты «⋮»', triggers);
+        log('shorts: ⋮ candidates', triggers);
         const ok = await runNativeAction(triggers, matcher);
-        if (!ok) { err('шортсы: не удалось выполнить действие. Подробности: __ytrc.diag() в консоли'); return; }
+        if (!ok) { err('shorts: action failed. Run __ytrc.diag() in the console for details'); return; }
         if (!CFG.shorts.autoNext) return;
-        // YouTube часто сам уходит на следующий ролик — иначе получится двойное перелистывание
+        // YouTube often moves to the next Short by itself; otherwise we'd skip two
         const moved = await waitFor(() => location.pathname !== before, CFG.shorts.autoNextWait, 60);
-        if (moved) { log('шортс пролистан самим YouTube'); return; }
+        if (moved) { log('YouTube scrolled to the next Short itself'); return; }
         const next = document.querySelector('ytd-shorts #navigation-button-down button');
         if (next) next.click();
     }
@@ -716,7 +718,7 @@ ${supportsHas ? `
         const sample = down && down.querySelector('button');
         if (!down || !sample) return;
 
-        // порядок под стрелкой «вниз»: «Не интересует», затем «Не рекомендовать канал»
+        // order below the down arrow: "Not interested", then "Don't recommend channel"
         let after = down;
         const place = (kind, enabled, tip, icon, matcher) => {
             if (!enabled) return;
@@ -724,7 +726,7 @@ ${supportsHas ? `
             if (!w) {
                 w = makeShortsButton(sample, kind, tip, icon, matcher);
                 after.insertAdjacentElement('afterend', w);
-                log('шортсы: кнопка добавлена —', kind);
+                log('shorts: button added -', kind);
             }
             after = w;
         };
@@ -732,9 +734,9 @@ ${supportsHas ? `
         place('channel', CFG.shorts.channel, CFG.tips.notRecommend, X_PATH, MATCH.notRecommend);
     }
 
-    /* ─────────────────────────── ДИАГНОСТИКА ───────────────────────── */
-    /* В консоли YouTube: __ytrc.diag() — что скрипт видит в шортсах;
-       __ytrc.diag(true) — ещё и откроет найденные «⋮» и покажет пункты их меню. */
+    /* ─────────────────────────── DIAGNOSTICS ───────────────────────── */
+    /* In the YouTube console: __ytrc.diag() shows what the script sees in Shorts;
+       __ytrc.diag(true) also opens the found ⋮ buttons and lists their menu items. */
 
     const describe = (el) => {
         if (!el) return null;
@@ -777,7 +779,7 @@ ${supportsHas ? `
         return report;
     }
 
-    /* ─────────────────────────── ПЛАНИРОВЩИК ───────────────────────── */
+    /* ──────────────────────────── SCHEDULER ─────────────────────────── */
 
     let scheduled = false;
     let injecting = false;
@@ -795,7 +797,7 @@ ${supportsHas ? `
                 safe('injectShortsButtons', injectShortsButtons);
             }
         } finally {
-            // наши же вставки не должны немедленно поднимать новый скан
+            // our own insertions must not immediately trigger another scan
             setTimeout(() => { injecting = false; }, 0);
         }
     }
@@ -814,7 +816,7 @@ ${supportsHas ? `
         const root = document.querySelector('ytd-app') || document.body || document.documentElement;
         new MutationObserver(() => { if (!injecting) schedule(); }).observe(root, { childList: true, subtree: true });
 
-        // hover по карточке: оверлей превью YouTube создаёт лениво, догоняем его
+        // card hover: YouTube creates the thumbnail overlay lazily, so catch up with it
         document.addEventListener('mouseover', (e) => {
             const t = e.target;
             if (t && t.closest && t.closest('yt-lockup-view-model')) schedule(30);
@@ -826,10 +828,10 @@ ${supportsHas ? `
         setInterval(() => schedule(0), 2000);
 
         window.__ytrc = { version: VERSION, cfg: CFG, diag };
-        log('запущен, версия', VERSION);
+        log('started, version', VERSION);
     }
 
-    safe('injectMixCSS', injectMixCSS); // миксы нужно спрятать как можно раньше, чтобы не мигнули
+    safe('injectMixCSS', injectMixCSS); // hide mixes as early as possible so they never flash
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => safe('start', start), { once: true });
     else safe('start', start);
 })();
