@@ -71,11 +71,3 @@ If the script saves you some nerves, you can support its development:
 | Crypto (NOWPayments) | https://nowpayments.io/donation/commonfool |
 
 <img src="docs/qr-monobank.png" width="160" alt="QR code for the Monobank jar">
-
-The script also shows a small support card in the bottom-left corner once a week (the first time a week after install). Close it with × and it stays hidden for another week. To turn it off for good:
-
-```js
-localStorage['ytrc:cfg'] = JSON.stringify({ donate: { enabled: false } })
-```
-
-<img src="docs/donate.png" width="390" alt="Support card">
