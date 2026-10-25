@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Rec Cleaner
 // @namespace    https://github.com/Common-Fool/Youtube-Rec-Cleaner
-// @version      2.0.2
+// @version      2.0.3
 // @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
 // @homepageURL  https://github.com/Common-Fool/Youtube-Rec-Cleaner
@@ -17,7 +17,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '2.0.2';
+    const VERSION = '2.0.3';
 
     /* ──────────────────────────── SETTINGS ──────────────────────────── */
     /*
@@ -89,6 +89,9 @@
 
     const log = (...a) => CFG.debug && console.log('[ytrc]', ...a);
     const err = (...a) => console.error('[ytrc]', ...a);
+    // timing log for Shorts actions: ms since the button was clicked
+    let t0 = 0;
+    const tlog = (...a) => log(`+${Math.round(performance.now() - t0)}ms`, ...a);
 
     /** Isolation: one failing block must not take down the others */
     function safe(name, fn) {
@@ -446,6 +449,7 @@ ${supportsHas ? `
             for (const trigger of list) {
                 closeAllPopups();
                 await sleep(0);
+                tlog('click ⋮', trigger.getAttribute('aria-label'), trigger);
                 trigger.click();
 
                 // with several candidates, a menu that has rendered its items but lacks
@@ -458,9 +462,10 @@ ${supportsHas ? `
                     itemsSince = itemsSince || Date.now();
                     return Date.now() - itemsSince > 300 ? MISS : null;
                 }, list.length > 1 ? 1500 : 2500, 40);
-                if (!item || item === MISS) { log('item not found in this menu', trigger); continue; }
+                if (!item || item === MISS) { tlog(item ? 'menu lacks the item, next ⋮' : 'menu timeout, next ⋮', openPopups()); continue; }
 
                 const pop = item.closest(POPUP_SEL);
+                tlog('item found:', norm(item), item);
                 clickItem(item);
 
                 await sleep(150);
@@ -723,6 +728,7 @@ ${supportsHas ? `
 
     async function shortsAction(kind, matcher) {
         if (busy) return;
+        t0 = performance.now();
         const before = location.pathname;
         const known = loadState()[kind] || {};
 
@@ -745,13 +751,15 @@ ${supportsHas ? `
         if (fresh && known.advances === false) {
             // YouTube doesn't scroll after this action: do it right away
             await sleep(150);
+            tlog('scrolling (learned: YouTube does not)');
             if (location.pathname === before) next();
             return;
         }
         // YouTube often moves to the next Short by itself; otherwise we'd skip two
         const moved = await waitFor(() => location.pathname !== before, CFG.shorts.autoNextWait, 60);
         saveState(kind, { advances: !!moved, checkedAt: Date.now() });
-        if (moved) { log('YouTube scrolled to the next Short itself'); return; }
+        if (moved) { tlog('YouTube scrolled to the next Short itself'); return; }
+        tlog('YouTube did not scroll, scrolling');
         next();
     }
 
