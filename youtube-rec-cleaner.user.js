@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Rec Cleaner
 // @namespace    https://github.com/Common-Fool/Youtube-Rec-Cleaner
-// @version      2.0.4
+// @version      2.1.0
 // @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
 // @homepageURL  https://github.com/Common-Fool/Youtube-Rec-Cleaner
@@ -17,7 +17,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '2.0.4';
+    const VERSION = '2.1.0';
 
     /* ──────────────────────────── SETTINGS ──────────────────────────── */
     /*
@@ -66,6 +66,12 @@
         tips: {
             notInterested: 'Not interested',
             notRecommend: "Don't recommend channel",
+        },
+
+        // Small floating "Support the project" card, bottom-left. Closing it hides it for intervalDays.
+        donate: {
+            enabled: true,
+            intervalDays: 7,
         },
 
         // true: verbose console log. Errors are always logged regardless of this flag.
@@ -304,6 +310,61 @@ ${supportsHas ? `
     transition: opacity .08s linear;
 }
 .ytrc-tip[data-show="1"] { opacity: 1; }
+
+.ytrc-donate {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 2147483646;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    max-width: calc(100vw - 32px);
+    padding: 12px 36px 12px 12px;
+    border-radius: 12px;
+    background: var(--yt-spec-menu-background, #282828);
+    color: var(--yt-spec-text-primary, #f1f1f1);
+    box-shadow: 0 4px 24px rgba(0,0,0,.35);
+    font: 400 13px/1.4 "Roboto", "Arial", sans-serif;
+    animation: ytrc-donate-in .25s ease-out;
+}
+@keyframes ytrc-donate-in { from { opacity: 0; transform: translateY(12px); } }
+.ytrc-donate-qr {
+    flex: none;
+    width: 76px;
+    height: 76px;
+    padding: 6px;
+    border-radius: 6px;
+    background: #fff;
+    box-sizing: border-box;
+}
+.ytrc-donate-title { font-weight: 500; font-size: 14px; margin-bottom: 2px; }
+.ytrc-donate-sub { color: var(--yt-spec-text-secondary, #aaa); font-size: 12px; margin-bottom: 8px; }
+.ytrc-donate-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.ytrc-donate-links a {
+    padding: 5px 10px;
+    border-radius: 16px;
+    background: var(--yt-spec-badge-chip-background, rgba(255,255,255,.1));
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+}
+.ytrc-donate-links a:hover { background: var(--yt-spec-button-chip-background-hover, rgba(255,255,255,.2)); }
+.ytrc-donate-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--yt-spec-text-secondary, #aaa);
+    font-size: 18px;
+    line-height: 26px;
+    cursor: pointer;
+}
+.ytrc-donate-close:hover { background: var(--yt-spec-badge-chip-background, rgba(255,255,255,.1)); }
 `;
     }
 
@@ -798,6 +859,82 @@ ${supportsHas ? `
         place('channel', CFG.shorts.channel, CFG.tips.notRecommend, X_PATH, MATCH.notRecommend);
     }
 
+    /* ──────────────────────────── DONATE ────────────────────────────── */
+
+    const DONATE_LINKS = [
+        ['Monobank', 'https://send.monobank.ua/jar/6m4nBQCW9B'],
+        ['Ko-fi', 'https://ko-fi.com/commonfool'],
+        ['Crypto', 'https://nowpayments.io/donation/commonfool'],
+    ];
+    // QR code of the Monobank link (29×29 modules, one stroke per row segment)
+    const DONATE_QR = 'M0 0.5h7m2 0h2m1 0h1m6 0h1m2 0h7m-29 1h1m5 0h1m2 0h1m1 0h1m1 0h3m1 0h2m3 0h1m5 0h1m-29 1h1m1 0h3m1 0h1m2 0h2m3 0h4m1 0h2m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m2 0h1m1 0h2m2 0h1m2 0h1m3 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m3 0h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m1 0h2m1 0h1m1 0h4m2 0h1m2 0h1m5 0h1m-29 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-17 1h1m1 0h6m-20 1h1m2 0h1m1 0h2m1 0h2m1 0h2m1 0h1m3 0h2m1 0h1m1 0h1m-23 1h2m4 0h2m1 0h1m1 0h2m1 0h2m3 0h4m1 0h1m2 0h1m-26 1h2m1 0h1m2 0h3m2 0h1m2 0h1m1 0h4m1 0h4m-27 1h5m1 0h4m2 0h2m3 0h1m2 0h3m2 0h2m-27 1h2m3 0h2m3 0h2m1 0h1m1 0h2m1 0h4m2 0h1m1 0h2m-29 1h2m2 0h1m2 0h2m2 0h1m3 0h1m3 0h3m-22 1h1m3 0h3m5 0h1m3 0h1m1 0h1m1 0h2m1 0h1m1 0h4m-29 1h4m3 0h1m1 0h5m2 0h2m1 0h1m4 0h2m1 0h1m-28 1h2m3 0h3m1 0h7m1 0h1m1 0h3m5 0h1m-27 1h2m1 0h2m1 0h1m1 0h2m3 0h1m1 0h1m4 0h3m1 0h1m2 0h1m-29 1h1m2 0h1m2 0h1m1 0h6m2 0h1m1 0h1m1 0h2m1 0h2m2 0h2m-27 1h1m1 0h2m3 0h1m2 0h2m1 0h1m1 0h3m7 0h2m-29 1h1m2 0h2m1 0h1m2 0h3m2 0h1m5 0h5m1 0h1m-19 1h3m2 0h1m3 0h4m3 0h1m1 0h3m-29 1h7m2 0h1m1 0h4m1 0h3m1 0h1m1 0h1m1 0h1m2 0h1m-28 1h1m5 0h1m1 0h1m3 0h2m1 0h2m3 0h1m3 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m3 0h1m1 0h1m1 0h5m1 0h5m2 0h2m-29 1h1m1 0h3m1 0h1m1 0h5m1 0h1m4 0h2m1 0h6m-28 1h1m1 0h3m1 0h1m3 0h2m2 0h1m1 0h1m2 0h2m3 0h3m1 0h1m-29 1h1m5 0h1m7 0h1m1 0h5m1 0h1m1 0h1m2 0h1m-28 1h7m1 0h2m1 0h2m3 0h3m1 0h1m1 0h1m1 0h1m2 0h1';
+    const DONATE_KEY = 'ytrc:donate';
+    const DAY = 864e5;
+
+    function donateState() {
+        try { return JSON.parse(localStorage.getItem(DONATE_KEY) || 'null') || {}; } catch (e) { return {}; }
+    }
+
+    function donateSave(st) {
+        try { localStorage.setItem(DONATE_KEY, JSON.stringify(st)); } catch (e) { /* storage blocked */ }
+    }
+
+    function donateShow() {
+        if (document.querySelector('.ytrc-donate')) return;
+        const el = (tag, cls, text) => {
+            const e = document.createElement(tag);
+            if (cls) e.className = cls;
+            if (text) e.textContent = text;
+            return e;
+        };
+
+        const card = el('div', 'ytrc-donate');
+        card.setAttribute('role', 'dialog');
+        card.setAttribute('aria-label', 'Support YouTube Rec Cleaner');
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'ytrc-donate-qr');
+        svg.setAttribute('viewBox', '0 0 29 29');
+        svg.setAttribute('shape-rendering', 'crispEdges');
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p.setAttribute('d', DONATE_QR);
+        p.setAttribute('stroke', '#000');
+        svg.appendChild(p);
+
+        const body = el('div');
+        body.appendChild(el('div', 'ytrc-donate-title', 'Enjoying YouTube Rec Cleaner?'));
+        body.appendChild(el('div', 'ytrc-donate-sub', 'Support the project: scan the QR (Monobank) or pick a way:'));
+        const links = el('div', 'ytrc-donate-links');
+        for (const [name, url] of DONATE_LINKS) {
+            const a = el('a', '', name);
+            a.href = url;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            links.appendChild(a);
+        }
+        body.appendChild(links);
+
+        const close = el('button', 'ytrc-donate-close', '×');
+        close.title = `Hide for ${CFG.donate.intervalDays} days`;
+        close.addEventListener('click', () => card.remove());
+
+        card.append(svg, body, close);
+        document.body.appendChild(card);
+    }
+
+    // Shows the card at most once per intervalDays; the first time a week after install.
+    function donateMaybe() {
+        if (!CFG.donate.enabled) return;
+        const now = Date.now();
+        const st = donateState();
+        if (!st.next) { donateSave({ next: now + CFG.donate.intervalDays * DAY }); return; }
+        if (now < st.next) return;
+        // not over a fullscreen video: try again later
+        if (document.fullscreenElement) { setTimeout(donateMaybe, 60e3); return; }
+        donateSave({ next: now + CFG.donate.intervalDays * DAY });
+        donateShow();
+    }
+
     /* ─────────────────────────── DIAGNOSTICS ───────────────────────── */
     /* In the YouTube console: __ytrc.diag() shows what the script sees in Shorts;
        __ytrc.diag(true) also opens the found ⋮ buttons and lists their menu items. */
@@ -891,7 +1028,9 @@ ${supportsHas ? `
         addEventListener('scroll', () => schedule(300), { passive: true });
         setInterval(() => schedule(0), 2000);
 
-        window.__ytrc = { version: VERSION, cfg: CFG, diag };
+        setTimeout(() => safe('donate', donateMaybe), 5000);
+
+        window.__ytrc = { version: VERSION, cfg: CFG, diag, donate: donateShow };
         log('started, version', VERSION);
     }
 
