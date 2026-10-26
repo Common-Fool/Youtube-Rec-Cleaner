@@ -30,6 +30,8 @@ Every action goes through YouTube's own menu, so YouTube gets exactly the same s
 2. Open this link and the manager will offer to install the script:
    **https://raw.githubusercontent.com/Common-Fool/Youtube-Rec-Cleaner/main/youtube-rec-cleaner.user.js**
 
+   Or install it from [Greasy Fork](https://greasyfork.org/scripts/602357-youtube-rec-cleaner), which is kept in sync with this repository.
+
 Updates are automatic: the manager compares `@version` against the file on the `main` branch.
 
 ## Settings
