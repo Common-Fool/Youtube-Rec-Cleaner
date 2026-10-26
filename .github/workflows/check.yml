@@ -1,0 +1,22 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: node --check youtube-rec-cleaner.user.js
+      - name: Header @version matches VERSION constant
+        run: |
+          header=$(sed -nE 's#^// @version +([^ ]+).*#\1#p' youtube-rec-cleaner.user.js)
+          const=$(sed -nE "s#^ +const VERSION = '([^']+)';#\1#p" youtube-rec-cleaner.user.js)
+          echo "header=$header const=$const"
+          [ -n "$header" ] && [ "$header" = "$const" ]

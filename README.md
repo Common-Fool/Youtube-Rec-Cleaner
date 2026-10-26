@@ -48,6 +48,12 @@ localStorage.removeItem('ytrc:cfg');
 
 All available keys are listed with comments in the `DEFAULTS` block at the top of the script. The given keys are merged over the defaults; reload the page after changing them.
 
+The script shows a small "Support the project" card at most once a week (the first time a week after install). To turn it off for good:
+
+```js
+localStorage['ytrc:cfg'] = JSON.stringify({ donate: { enabled: false } });
+```
+
 ## Troubleshooting
 
 YouTube changes its markup often. If a Shorts button stops working, open a Short, run this in the console
@@ -71,3 +77,11 @@ If the script saves you some nerves, you can support its development:
 | Crypto (NOWPayments) | https://nowpayments.io/donation/commonfool |
 
 <img src="docs/qr-monobank.png" width="160" alt="QR code for the Monobank jar">
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE)

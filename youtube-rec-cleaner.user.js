@@ -4,6 +4,7 @@
 // @version      2.1.1
 // @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
+// @license      MIT
 // @homepageURL  https://github.com/Common-Fool/Youtube-Rec-Cleaner
 // @supportURL   https://github.com/Common-Fool/Youtube-Rec-Cleaner/issues
 // @updateURL    https://raw.githubusercontent.com/Common-Fool/Youtube-Rec-Cleaner/main/youtube-rec-cleaner.user.js

@@ -1,0 +1,31 @@
+name: Bug report
+description: A button doesn't work, Mixes aren't hidden, or something else broke
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Script version
+      description: Shown in your userscript manager (e.g. 2.1.1).
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Browser and userscript manager
+      placeholder: Chrome 141, Tampermonkey 5.4
+    validations:
+      required: true
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnostics (for Shorts issues)
+      description: Open a Short, run `__ytrc.diag(true)` in the F12 console and paste the JSON output here.
+      render: json
