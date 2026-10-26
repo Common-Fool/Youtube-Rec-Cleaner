@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Rec Cleaner
 // @namespace    https://github.com/Common-Fool/Youtube-Rec-Cleaner
-// @version      2.1.0
+// @version      2.1.1
 // @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
 // @homepageURL  https://github.com/Common-Fool/Youtube-Rec-Cleaner
@@ -17,7 +17,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '2.1.0';
+    const VERSION = '2.1.1';
 
     /* ──────────────────────────── SETTINGS ──────────────────────────── */
     /*
@@ -805,24 +805,47 @@ ${supportsHas ? `
         saveState(kind, { trigger: triggerKey(used, found) });
         if (!CFG.shorts.autoNext) return;
 
-        const next = () => {
-            const btn = document.querySelector('ytd-shorts #navigation-button-down button');
+        const nav = (dir) => {
+            const btn = document.querySelector(`ytd-shorts #navigation-button-${dir} button`);
             if (btn) btn.click();
+        };
+        const reel0 = activeReel();
+        const movedFrom = (path, reel) => location.pathname !== path || (reel && activeReel() !== reel);
+
+        // Scroll ourselves, then make sure YouTube doesn't scroll as well (it sometimes does so late).
+        // If it does, step back once so no Short is skipped, and forget what was learned.
+        const next = async () => {
+            if (movedFrom(before, reel0)) { tlog('YouTube scrolled itself just in time'); return; }
+            nav('down');
+            const ours = await waitFor(() => location.pathname !== before && location.pathname, 1500, 40);
+            if (!ours) return;
+            const reel1 = activeReel();
+            // a scroll the user makes in this window is theirs, not YouTube's
+            let user = false;
+            const mark = () => { user = true; };
+            const evs = ['wheel', 'keydown', 'pointerdown', 'touchstart'];
+            evs.forEach((ev) => addEventListener(ev, mark, { capture: true, passive: true }));
+            const twice = await waitFor(() => user || movedFrom(ours, reel1), 1500, 60);
+            evs.forEach((ev) => removeEventListener(ev, mark, { capture: true }));
+            if (!twice || user) return;
+            tlog('YouTube scrolled too: stepping back');
+            saveState(kind, { advances: true, checkedAt: Date.now() });
+            nav('up');
         };
         const fresh = known.checkedAt && Date.now() - known.checkedAt < STATE_TTL;
         if (fresh && known.advances === false) {
             // YouTube doesn't scroll after this action: do it right away
             await sleep(150);
             tlog('scrolling (learned: YouTube does not)');
-            if (location.pathname === before) next();
+            await next();
             return;
         }
         // YouTube often moves to the next Short by itself; otherwise we'd skip two
-        const moved = await waitFor(() => location.pathname !== before, CFG.shorts.autoNextWait, 60);
+        const moved = await waitFor(() => movedFrom(before, reel0), CFG.shorts.autoNextWait, 60);
         saveState(kind, { advances: !!moved, checkedAt: Date.now() });
         if (moved) { tlog('YouTube scrolled to the next Short itself'); return; }
         tlog('YouTube did not scroll, scrolling');
-        next();
+        await next();
     }
 
     function makeShortsButton(sample, kind, tip, icon, matcher) {
