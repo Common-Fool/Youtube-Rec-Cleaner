@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# The check only reads the code; keep the token read-only
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
