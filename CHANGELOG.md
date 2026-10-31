@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.1.2 — 2026-10-31
+- Shorts: no more double scroll after "Don't recommend channel". The script now waits for YouTube's own scroll unless YouTube skipped it 3 times in a row.
+
 ## 2.1.1 — 2026-10-26
 - Shorts: undo a double scroll when YouTube advances to the next Short late.
 

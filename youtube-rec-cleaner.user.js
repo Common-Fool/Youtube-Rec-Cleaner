@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Rec Cleaner
 // @namespace    https://github.com/Common-Fool/Youtube-Rec-Cleaner
-// @version      2.1.1
+// @version      2.1.2
 // @description  Cleans up YouTube recommendations: hides Mixes/Radio and adds one-click native feedback buttons ("Not interested" and "Don't recommend channel") to the home feed and Shorts. Every action goes through YouTube's own menu.
 // @author       Common-Fool
 // @license      MIT
@@ -18,7 +18,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '2.1.1';
+    const VERSION = '2.1.2';
 
     /* ──────────────────────────── SETTINGS ──────────────────────────── */
     /*
@@ -767,9 +767,12 @@ ${supportsHas ? `
     /* Remembered per action between page loads:
        trigger — which ⋮ worked last time, so it is tried first;
        advances — whether YouTube scrolls to the next Short by itself after this action.
+         It is inconsistent about that, so "doesn't scroll" is only assumed after
+         NO_ADVANCE_STREAK misses in a row, and a single scroll by YouTube resets it.
        Without the latter every action would wait autoNextWait before scrolling. */
     const STATE_KEY = 'ytrc:state';
     const STATE_TTL = 24 * 3600 * 1000; // re-check YouTube's behaviour once a day
+    const NO_ADVANCE_STREAK = 3;
 
     function loadState() {
         try { return JSON.parse(localStorage.getItem(STATE_KEY) || '{}') || {}; } catch (e) { return {}; }
@@ -816,7 +819,11 @@ ${supportsHas ? `
         // Scroll ourselves, then make sure YouTube doesn't scroll as well (it sometimes does so late).
         // If it does, step back once so no Short is skipped, and forget what was learned.
         const next = async () => {
-            if (movedFrom(before, reel0)) { tlog('YouTube scrolled itself just in time'); return; }
+            if (movedFrom(before, reel0)) {
+                tlog('YouTube scrolled itself just in time');
+                saveState(kind, { advances: true, misses: 0, checkedAt: Date.now() });
+                return;
+            }
             nav('down');
             const ours = await waitFor(() => location.pathname !== before && location.pathname, 1500, 40);
             if (!ours) return;
@@ -830,11 +837,11 @@ ${supportsHas ? `
             evs.forEach((ev) => removeEventListener(ev, mark, { capture: true }));
             if (!twice || user) return;
             tlog('YouTube scrolled too: stepping back');
-            saveState(kind, { advances: true, checkedAt: Date.now() });
+            saveState(kind, { advances: true, misses: 0, checkedAt: Date.now() });
             nav('up');
         };
         const fresh = known.checkedAt && Date.now() - known.checkedAt < STATE_TTL;
-        if (fresh && known.advances === false) {
+        if (fresh && known.advances === false && known.misses >= NO_ADVANCE_STREAK) {
             // YouTube doesn't scroll after this action: do it right away
             await sleep(150);
             tlog('scrolling (learned: YouTube does not)');
@@ -843,7 +850,8 @@ ${supportsHas ? `
         }
         // YouTube often moves to the next Short by itself; otherwise we'd skip two
         const moved = await waitFor(() => movedFrom(before, reel0), CFG.shorts.autoNextWait, 60);
-        saveState(kind, { advances: !!moved, checkedAt: Date.now() });
+        const misses = moved ? 0 : (known.misses || 0) + 1;
+        saveState(kind, { advances: misses < NO_ADVANCE_STREAK, misses, checkedAt: Date.now() });
         if (moved) { tlog('YouTube scrolled to the next Short itself'); return; }
         tlog('YouTube did not scroll, scrolling');
         await next();
