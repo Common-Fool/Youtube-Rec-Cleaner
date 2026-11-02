@@ -1,5 +1,7 @@
 # YouTube Rec Cleaner
 
+📢 Updates and new projects: [Telegram channel](https://t.me/common_fool)
+
 A userscript that cleans up YouTube recommendations:
 
 - **Hides Mixes and Radio** on the home page, in search and in the watch-page sidebar. Pure CSS, no flashing.
